@@ -1,4 +1,5 @@
 .coupling_simulation/
 .DS_Store
-/figure
-/animations
+/animations/output
+/figures/output
+/pickles/output
