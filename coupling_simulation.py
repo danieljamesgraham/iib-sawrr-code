@@ -1,12 +1,7 @@
-# TODO: Add timing function
 # TODO: Change steps to step (eg. # to step size)
 # TODO: Change speed so that not coupled to 25 fps
 # TODO: Link parser arguments to specific modes
-# TODO: Add datapoint density to plots
-# TODO: Fix bug with window and x array sizes
-# TODO: Add option to disable window function and relax even constraint
 # TODO: Use optimised coupling length from pickle instead of brute forcing
-# TODO: Move calculations out of init to speed up
 
 import argparse
 from matplotlib import pyplot as plt
@@ -17,59 +12,16 @@ import time
 import datetime
 import pickle
 
-parser = argparse.ArgumentParser(description="A script that simulates the coupling of acoustic waves between an input waveguide and a resonant ring waveguide.")
-parser.add_argument('mode', type=str, choices=["animation", "max_amp_vs_coupling_length", "max-amp-vs-velocity-ratio"])
-
-parser.add_argument('--iterations', type=int, default="1000")
-parser.add_argument('--datapoint_density', type=int, default="100")
-parser.add_argument('--fps', type=int, default="25")
-parser.add_argument('--coupling_coeff', type=float, default="0.05")
-parser.add_argument('--decay_exponent', type=float, default="3")
-parser.add_argument('--coupling_length', type=float, default="1")
-parser.add_argument('--input_velocity', type=float, default="2")
-parser.add_argument('--velocity_ratio', type=float, default="1.5")
-parser.add_argument('--edge_length', type=float, default="0.5")
-parser.add_argument('--ring_length', type=float, default="15")
-
-parser.add_argument('--coupling-step', type=float, default="0.01")
-parser.add_argument('--min-coupling-length', type=float, default="0")
-parser.add_argument('--max-coupling-length', type=float, default="3")
-
-parser.add_argument('--velocity-step', type=int, default="100")
-parser.add_argument('--min-velocity-ratio', type=float, default="1")
-parser.add_argument('--max-velocity-ratio', type=float, default="2")
-
-args = parser.parse_args()
+calcs, cfg, init_arrs, sim_times = 0, {}, {}, {}
 
 animations_path = "animations/output/"
 figures_path = "figures/output/"
 pickles_path = "pickles/output/"
 
-calcs, time_dict = 0, {}
-
-def get_plot_text():
-    plot_text = ''
-    plot_text += "Coupling coefficient: " + str(args.coupling_coeff)
-    plot_text += "\nDecay exponent: " + str(args.decay_exponent)
-    plot_text += "\nEdge length: " + str(args.edge_length)
-    if args.mode == "animation":
-        plot_text += "\nCoupling length: " + str(args.coupling_length)
-    if args.mode == "max_amp_vs_coupling_length" or args.mode == "animation":
-        plot_text += "\nRing length: " + str(args.ring_length)
-        plot_text += "\nVelocity ratio: " + str(args.velocity_ratio)
-    if args.mode == "animation":
-        plot_text += "\nDatapoints: " + str(args.datapoint_density)
-    if args.mode == "max_amp_vs_coupling_length" or args.mode == "max_amp-vs-velocity-ratio":
-        plot_text += "\nIterations: " + str(args.iterations)
-        plot_text += "\nCoupling step: " + str(args.coupling_step)
-    if args.mode == "max-amp-vs-velocity-ratio":
-        plot_text += "\nVelocity step: " + str(args.velocity_step)
-    plot_text += "\nDatapoint density: " + str(args.datapoint_density)
-
-    return plot_text
+### Simulation
 
 def init_simulate_coupling(ring_length, coupling_length, velocity_ratio):
-    cfg, init_arrs = {}, {}
+    global cfg, init_arrs
 
     # Timestep
     cfg["delta_t"] = 1 / args.fps
@@ -101,20 +53,8 @@ def init_simulate_coupling(ring_length, coupling_length, velocity_ratio):
                              0.5*(1-np.sin(np.linspace(-np.pi/2, np.pi/2, int(edge_datapoints/2))))
                              ))
 
-    # print("\n\n")
-    # print(f"x_input: {len(init_arrs['x_input'])}")
-    # print(f"ring_length: {ring_length}")
-    # print(f"ring_datapoints: {ring_length}")
-    # print(f"window: {len(init_arrs['window'])}")
-    # print(f"edge_datapoints/2: {int(edge_datapoints/2)}")
-    # print(f"coupling_datapoints: {coupling_datapoints}")
-    # print(f"coupling_length: {coupling_length}")
-    # print(f"datapoint_density: {args.datapoint_density}")
-    # print(f"coupling_length*datpoint_density: {coupling_length*args.datapoint_density}")
-
-    return cfg, init_arrs
-
-def simulate_coupling(i, y_ring, init_arrs, cfg):
+def simulate_coupling(i, y_ring):
+    global cfg, init_arrs
     # Input waveguide travelling wave
     y_input = np.sin(2 * np.pi * (init_arrs["x_input"] - cfg["delta_t"] * args.input_velocity * i)) * init_arrs["window"]
 
@@ -125,35 +65,48 @@ def simulate_coupling(i, y_ring, init_arrs, cfg):
 
     return y_input, y_ring
 
-def get_max_amplitude(cfg, init_arrs):
-    max_amplitude = 0
-    y_ring = init_arrs["y_ring"]
-
-    for i in range(args.iterations):
-        y_input, y_ring = simulate_coupling(i, y_ring, init_arrs, cfg)
-        max_y_ring = max(y_ring)
-        if max_y_ring > max_amplitude:
-            max_amplitude = max_y_ring
-
-    return max_amplitude
+### Front end
 
 def print_completion(total_calcs, n_calcs):
-    global calcs, time_dict
+    global calcs, sim_times 
 
     if calcs % n_calcs == 0:
-        time_dict["start_time"] = time.time()
+        sim_times["start_time"] = time.time()
     elif calcs % n_calcs == n_calcs - 1:
-        time_dict["n_calcs_time"] = time.time() - time_dict["start_time"]
+        sim_times["n_calcs_time"] = time.time() - sim_times["start_time"]
 
     print(f"\rCompletion: {(calcs*100/total_calcs):05.2f}%", end="")
     if calcs > n_calcs:
-        print(f"\nEstimated time: {str(datetime.timedelta(seconds=int(time_dict['n_calcs_time']*(total_calcs-calcs)/n_calcs))).zfill(8)}\033[F", end="")
+        print(f"\nEstimated time: {str(datetime.timedelta(seconds=int(sim_times['n_calcs_time']*(total_calcs-calcs)/n_calcs))).zfill(8)}\033[F", end="")
 
     calcs += 1
 
+def get_plot_text():
+    plot_text = ''
+    plot_text += "Coupling coefficient: " + str(args.coupling_coeff)
+    plot_text += "\nDecay exponent: " + str(args.decay_exponent)
+    plot_text += "\nEdge length: " + str(args.edge_length)
+    if args.mode == "animation":
+        plot_text += "\nCoupling length: " + str(args.coupling_length)
+    if args.mode == "max-amp-vs-coupling-length" or args.mode == "animation":
+        plot_text += "\nRing length: " + str(args.ring_length)
+        plot_text += "\nVelocity ratio: " + str(args.velocity_ratio)
+    if args.mode == "animation":
+        plot_text += "\nDatapoints: " + str(args.datapoint_density)
+    if args.mode == "max-amp-vs-coupling-length" or args.mode == "max_amp-vs-velocity-ratio":
+        plot_text += "\nIterations: " + str(args.iterations)
+        plot_text += "\nCoupling step: " + str(args.coupling_step)
+    if args.mode == "max-amp-vs-velocity-ratio":
+        plot_text += "\nVelocity step: " + str(args.velocity_step)
+    plot_text += "\nDatapoint density: " + str(args.datapoint_density)
+
+    return plot_text
+
+### Animation
+
 def init_animate(): 
-    global time_dict
-    time_dict = {}
+    global sim_times 
+    sim_times = {}
     line_input.set_data([], [])
     line_ring.set_data([], [])
     return line_input, line_ring,
@@ -167,7 +120,7 @@ def animate(i):
     calcs = i
     print_completion(args.iterations, 100)
 
-    y_input, y_ring = simulate_coupling(i, y_ring, init_arrs, cfg)
+    y_input, y_ring = simulate_coupling(i, y_ring)
 
     # Assign data
     line_input.set_data(init_arrs["x_input"], y_input)
@@ -177,7 +130,8 @@ def animate(i):
 
 def animate_simulation():
     global cfg, init_arrs, y_ring, line_input, line_ring, iteration_text
-    cfg, init_arrs = init_simulate_coupling(args.ring_length, args.coupling_length, args.velocity_ratio)
+
+    init_simulate_coupling(args.ring_length, args.coupling_length, args.velocity_ratio)
 
     # Plot parameters
     fig = plt.figure()
@@ -196,24 +150,45 @@ def animate_simulation():
     y_ring = init_arrs["y_ring"]
     anim = FuncAnimation(fig, animate, init_func=init_animate, frames=args.iterations, interval=cfg["delta_t"]*1000)
 
+    # Get current date and time
+    now = datetime.datetime.now()
+    current_time = now.strftime("-%m%d-%H%M%S")
+
     file_name = args.mode + current_time
     anim.save(animations_path+file_name+".mp4", writer = 'ffmpeg', fps = args.fps)
 
-def vary_coupling_length(ring_length, velocity_ratio, completion=False):
-    global calcs, time_dict
+### Plot functions
+
+def get_max_amplitude():
+    global cfg, init_arrs
+    max_amplitude = 0
+    y_ring = init_arrs["y_ring"]
+
+    for i in range(args.iterations):
+        y_input, y_ring = simulate_coupling(i, y_ring)
+        max_y_ring = max(y_ring)
+        if max_y_ring > max_amplitude:
+            max_amplitude = max_y_ring
+
+    return max_amplitude
+
+def vary_coupling_length(ring_length, velocity_ratio, progress=False):
+    global calcs, sim_times
     max_amplitudes = []
 
     coupling_lengths = np.arange(args.min_coupling_length, args.max_coupling_length+args.coupling_step, args.coupling_step)
     total_calcs = len(coupling_lengths)
 
     for coupling_length in coupling_lengths:
-        cfg, init_arrs = init_simulate_coupling(ring_length, round(coupling_length,8), velocity_ratio)
-        max_amplitudes.append(get_max_amplitude(cfg, init_arrs))
+        init_simulate_coupling(ring_length, round(coupling_length,8), velocity_ratio)
+        max_amplitudes.append(get_max_amplitude())
 
-        if completion == True:
+        if progress == True:
             print_completion(total_calcs, 10)
 
     return coupling_lengths, max_amplitudes
+
+### Produce plots
 
 def plot_max_amp_vs_coupling_length():
     coupling_lengths, max_amplitudes = vary_coupling_length(args.ring_length, args.velocity_ratio, True)
@@ -229,13 +204,17 @@ def plot_max_amp_vs_coupling_length():
     plt.text(0.98, 0.02, get_plot_text(), ha='right', va='bottom', transform=plt.gca().transAxes)
     plt.tight_layout()
 
+    # Get current date and time
+    now = datetime.datetime.now()
+    current_time = now.strftime("-%m%d-%H%M%S")
+
     file_name = "max_amp_vs_coupling_length" + current_time
     plt.savefig(figures_path+file_name+".png", format='png', dpi=300)
     with open(pickles_path+file_name+".pickle", "wb") as f:
         pickle.dump([coupling_lengths, max_amplitudes], f)
 
 def plot_max_amp_vs_velocity_ratio():
-    global calcs, time_dict
+    global calcs, sim_times
     amplitudes = []
 
     velocity_ratios = np.arange(args.min_velocity_ratio, args.max_velocity_ratio+args.velocity_step, args.velocity_step)
@@ -261,21 +240,47 @@ def plot_max_amp_vs_velocity_ratio():
     plt.text(0.98, 0.98, get_plot_text(), ha='right', va='top', transform=plt.gca().transAxes)
     plt.tight_layout()
 
+    # Get current date and time
+    now = datetime.datetime.now()
+    current_time = now.strftime("-%m%d-%H%M%S")
+
     file_name = args.mode + current_time
     plt.savefig(figures_path+file_name+".png", format='png', dpi=300)
     with open(pickles_path+file_name+".pickle", "wb") as f:
         pickle.dump([velocity_ratios, amplitudes], f)
 
-# Get current date and time
-now = datetime.datetime.now()
-current_time = now.strftime("-%m%d-%H%M%S")
+### Main
+
+parser = argparse.ArgumentParser(description="A script that simulates the coupling of acoustic waves between an input waveguide and a resonant ring waveguide.")
+parser.add_argument("mode", type=str, choices=["animation", "max-amp-vs-coupling-length", "max-amp-vs-velocity-ratio"])
+
+parser.add_argument("-i", "--iterations", type=int, default="1000", help="default: 1000")
+parser.add_argument("-d", "--datapoint-density", type=int, default="100", help="default: 1000")
+parser.add_argument("--fps", type=int, default="25", help="default: 1000")
+parser.add_argument("--coupling-coeff", type=float, default="0.05", help="default: 1000")
+parser.add_argument("--decay-exponent", type=float, default="3", help="default: 1000")
+parser.add_argument("-c", "--coupling-length", type=float, default="1", help="default: 1000")
+parser.add_argument("-v", "--input-velocity", type=float, default="2", help="default: 1000")
+parser.add_argument("-r", "--velocity-ratio", type=float, default="1.5", help="default: 1000")
+parser.add_argument("-e", "--edge-length", type=float, default="1", help="default: 1000")
+parser.add_argument("-l", "--ring-length", type=float, default="15", help="default: 1000")
+
+parser.add_argument("--coupling-step", type=float, default="0.01", help="default: 1000")
+parser.add_argument("--min-coupling-length", type=float, default="0", help="default: 1000")
+parser.add_argument("--max-coupling-length", type=float, default="3", help="default: 1000")
+
+parser.add_argument("--velocity-step", type=int, default="100", help="default: 1000")
+parser.add_argument("--min-velocity-ratio", type=float, default="1", help="default: 1000")
+parser.add_argument("--max-velocity-ratio", type=float, default="2", help="default: 1000")
+
+args = parser.parse_args()
 
 if args.datapoint_density % 2 != 0:
     raise ValueError("Number of datapoints must be even")
 
 if args.mode == "animation":
     animate_simulation()
-elif args.mode == "max_amp_vs_coupling_length":
+elif args.mode == "max-amp-vs-coupling-length":
     plot_max_amp_vs_coupling_length()
 elif args.mode == "max-amp-vs-velocity-ratio":
     plot_max_amp_vs_velocity_ratio()
