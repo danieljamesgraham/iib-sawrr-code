@@ -1,5 +1,2 @@
-.rr_sim/
 .DS_Store
-/animations/output
-/figures/output
-/pickles/output
+output/
